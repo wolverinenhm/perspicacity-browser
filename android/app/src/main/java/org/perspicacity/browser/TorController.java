@@ -48,7 +48,6 @@ final class TorController {
         @Override public void onReceive(Context c, Intent intent) {
             String s = intent.getStringExtra(TorService.EXTRA_STATUS);
             if (s == null) return;
-            if (TorService.STATUS_CLIENT_CIRCUIT_ESTABLISHED.equals(s)) s = TorService.STATUS_ON;
             status = s;
             if (TorService.STATUS_ON.equals(s)) progress = 100;
             publish();
