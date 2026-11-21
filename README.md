@@ -53,7 +53,7 @@ npm start                      # run (uses a running Tor Browser/tor, or vendor/
 npx electron . --selftest      # end-to-end self-test in a real window
 node scripts/fetch-tor.js windows-x86_64 && npm run dist:win   # Windows installer (on Windows)
 
-# Android (JDK 17, Android SDK)
+# Android (JDK 21, Android SDK)
 cd android
 ./gradlew :core:test :app:assembleRelease
 ```
