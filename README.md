@@ -34,6 +34,14 @@ The only bridge between them is a typed, provenance-tracking capability broker. 
 
 Each child document opens with a **conformance table** mapping its mechanisms to parent invariants, and proposes any deviation as a registered amendment. **[Appendix H of ARCHITECTURE.md](ARCHITECTURE.md#appendix-h--amendments-register)** is the single register of those changes (A-1 … A-16).
 
+## Offline edition
+
+All five documents are also published as a single self-contained HTML file — diagrams baked to static SVG, no network access needed at any point, printable, with a filterable table of contents:
+
+- **[v1.1.0-docs — offline specification bundle](https://github.com/wolverinenhm/perspicacity-browser/releases/tag/v1.1.0-docs)** — `perspicacity-specs-v1.1.0.html`, `.zip`, and `SHA256SUMS.txt`
+
+Both artifacts are byte-reproducible from the tagged sources, and their SHA-256 digests are recorded by GitHub alongside the uploads. The bundle contains the same specifications you are reading here — still no browser, no installer, no APK.
+
 ## Reading paths
 
 | If you are… | Read |
