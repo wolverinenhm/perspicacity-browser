@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
-const { bridgeLines, transportLines } = require('../src/main/tor');
+const { bridgeLines, transportLines, parseBootstrap } = require('../src/main/tor');
 
 const pt = {
   pluggableTransports: { lyrebird: 'ClientTransportPlugin meek_lite,obfs4,webtunnel exec ${pt_path}lyrebird' },
@@ -21,4 +21,11 @@ test('transport paths are relative to the tor folder (no spaces from install pat
   const [line] = transportLines(layout, pt);
   assert.ok(line.includes(`exec pluggable_transports${path.sep}lyrebird`), line);
   assert.ok(!line.includes('Program Files'));
+});
+
+test('bootstrap lines parse with LF and CRLF endings', () => {
+  const line = 'Nov 21 09:48:01.000 [notice] Bootstrapped 45% (requesting_descriptors): Asking for relay descriptors';
+  assert.deepStrictEqual(parseBootstrap(line), { progress: 45, message: 'Asking for relay descriptors' });
+  assert.deepStrictEqual(parseBootstrap(`${line}\r`), { progress: 45, message: 'Asking for relay descriptors' });
+  assert.strictEqual(parseBootstrap('Nov 21 [notice] Opening Socks listener'), null);
 });

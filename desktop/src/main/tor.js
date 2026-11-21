@@ -14,7 +14,15 @@ const path = require('path');
 const net = require('net');
 const { probeSocks } = require('./gateway');
 
-const BOOTSTRAP_RE = /Bootstrapped (\d+)%[^:]*:\s*(.*)$/;
+const BOOTSTRAP_RE = /Bootstrapped (\d+)%[^:]*:\s*(.*?)\s*$/;
+
+/** Parses a Tor "Bootstrapped N%" notice line; null for any other line. */
+function parseBootstrap(line) {
+  const m = BOOTSTRAP_RE.exec(line);
+  if (!m) return null;
+  const progress = Number(m[1]);
+  return { progress, message: m[2] || `Bootstrapped ${progress}%` };
+}
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -182,10 +190,9 @@ class TorManager extends EventEmitter {
     this.child = child;
     let tail = '';
     const onLine = (line) => {
-      const m = BOOTSTRAP_RE.exec(line);
-      if (m) {
-        const pct = Number(m[1]);
-        this.set({ progress: pct, message: m[2].trim() || `Bootstrapped ${pct}%`, phase: pct >= 100 ? 'ready' : 'bootstrapping' });
+      const b = parseBootstrap(line);
+      if (b) {
+        this.set({ progress: b.progress, message: b.message, phase: b.progress >= 100 ? 'ready' : 'bootstrapping' });
       } else if (/\[(err|warn)\]/.test(line)) {
         tail = line.replace(/^.*\[(err|warn)\]\s*/, '');
       }
@@ -194,7 +201,8 @@ class TorManager extends EventEmitter {
     child.stdout.on('data', (d) => {
       buf += d.toString('utf8');
       let i;
-      while ((i = buf.indexOf('\n')) >= 0) { onLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+      // Tor on Windows ends lines with CRLF.
+      while ((i = buf.indexOf('\n')) >= 0) { onLine(buf.slice(0, i).replace(/\r$/, '')); buf = buf.slice(i + 1); }
     });
     child.stderr.on('data', (d) => { tail = d.toString('utf8').trim().split('\n').pop(); });
     await new Promise((resolve, reject) => {
@@ -232,4 +240,4 @@ class TorManager extends EventEmitter {
   }
 }
 
-module.exports = { TorManager, findBundledTor, bridgeLines, transportLines };
+module.exports = { TorManager, findBundledTor, bridgeLines, transportLines, parseBootstrap };
