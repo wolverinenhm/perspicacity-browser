@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF14121C</color>
+    <color name="bg2">#FF1D1A28</color>
+    <color name="bg3">#FF282338</color>
+    <color name="fg">#FFECE9F6</color>
+    <color name="muted">#FFA49FB8</color>
+    <color name="veil">#FF8B6CFF</color>
+    <color name="amber">#FFE8A838</color>
+    <color name="ok">#FF4FD18B</color>
+    <color name="bad">#FFFF6B6B</color>
+</resources>

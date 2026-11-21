@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Document ID | PSC-ARCH-001 |
-| Revision | 1.0 (founding architecture) |
+| Revision | 1.1 (founding architecture + amendments register) |
 | Status | Proposed — for technical review |
 | Date | 2026-11-21 |
 | Authors | Principal Browser Architect; Applied Cryptography review |

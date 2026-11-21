@@ -1,76 +1,83 @@
 # Perspicacity
 
-**Architecture and subsystem specifications for a hardened desktop browser that combines autonomous AI agent workflows with Tor-grade anonymity.**
+**A privacy browser that keeps an AI agent from becoming the thing that deanonymises you.** Windows and Android builds, built from the specification in [`docs/spec/`](docs/spec/).
 
-> **Status: design-stage.** This repository contains specifications, not implementation. There is no browser source here, no build system, and no runnable artifact. Everything is a *proposal* — revision 1.1 — written to be falsified, costed, and argued with.
-
----
-
-## The problem these documents solve
-
-An AI agent needs DOM access, cross-tab state and durable memory. High anonymity requires no persistent state, strict origin isolation and a uniform fingerprint. Naively composed, **the agent becomes the deanonymiser**: memory is a supercookie, a DOM reader is a cross-origin read primitive, an autonomous clicker is a timing oracle, and an LLM API call is an exfiltration channel that bypasses the proxy entirely.
-
-The design resolves this by treating anonymity as a **correlation** problem rather than a persistence problem, and by splitting the browser into two mutually distrustful identity domains:
-
-| | **VEIL** | **SHADOW** |
+| | **VEIL** (browsing) | **SHADOW** (agent work) |
 |---|---|---|
-| Purpose | Hermetic browsing | Agentic execution |
-| State | RAM-only, destroyed per session | Encrypted at rest, local only |
-| Network | Tor, circuit per first-party domain | Separate circuits, separate clients |
-| Fingerprint | One canonical value per surface, identical for every user | Non-anonymous by construction |
-| The agent | Cannot touch it except through **LATTICE** | Its home |
+| Storage | RAM only, per tab, destroyed on close or New Identity | Persistent, local only |
+| Network | Tor, with a separate circuit per site *and* per tab | Separate Tor circuits, or direct if you choose |
+| Fingerprint | One canonical value per surface for every user | Not anonymous by design |
+| The agent | Cannot touch it | Its only home, and every effect needs your approval |
 
-The only bridge between them is a typed, provenance-tracking capability broker. Every cross-domain effect is either (a) lossy, labelled data, or (b) a human-approved capability recorded in an append-only ledger. There is no third kind.
+## Download
 
-## The document set
+Get the latest installers from **[Releases](https://github.com/wolverinenhm/perspicacity-browser/releases)**:
 
-| Document | Scope | Words |
-|---|---|---|
-| **[ARCHITECTURE.md](ARCHITECTURE.md)** | Parent specification: process and IPC model, storage and key hierarchy, threat model, engine selection, delivery plan | ~25 000 |
-| **[NETWORK.md](NETWORK.md)** | Embedded Arti in the network service: per-class clients, isolation tokens, leak matrix, pluggable transports | ~7 500 |
-| **[FINGERPRINT.md](FINGERPRINT.md)** | Engine patches and runtime overrides for fingerprint uniformity, timing mitigations, human-emulation layer | ~6 100 |
-| **[AGENT.md](AGENT.md)** | Off-screen shadow contexts, AXTree distillation, hybrid local/OHTTP inference, capability security | ~6 400 |
-| **[UTILITIES.md](UTILITIES.md)** | Native filter engine, new-identity rotation, download sanitiser, local automation | ~6 100 |
+- **Windows 10/11 (x64):** `Perspicacity-Setup-<version>-x64.exe` (installer) or `Perspicacity-Portable-<version>-x64.exe` (no install). Tor is included. The installer is not code-signed yet, so SmartScreen may ask you to confirm (*More info → Run anyway*).
+- **Android 8.0+:** `Perspicacity-<version>-universal.apk`, or the smaller APK for your phone's CPU (most phones: `arm64-v8a`). Tor is included. Allow "install unknown apps" for your browser or file manager when asked.
 
-Each child document opens with a **conformance table** mapping its mechanisms to parent invariants, and proposes any deviation as a registered amendment. **[Appendix H of ARCHITECTURE.md](ARCHITECTURE.md#appendix-h--amendments-register)** is the single register of those changes (A-1 … A-16).
+Every file is listed with its SHA-256 in `SHA256SUMS.txt` on the release page. Releases are built by GitHub Actions from the tagged source ([workflow](.github/workflows/build.yml)).
 
-## Offline edition
+## What it does
 
-All five documents are also published as a single self-contained HTML file — diagrams baked to static SVG, no network access needed at any point, printable, with a filterable table of contents:
+**VEIL tabs** (the default, `Ctrl+T`)
+- **Tor, fail-closed.** Nothing loads until Tor is connected; if Tor stops, pages stop. The Windows build ships the official Tor Expert Bundle (checksum-verified at build time) and can use built-in obfs4, Snowflake or meek bridges, or your own. It also uses a Tor Browser or system Tor that is already running.
+- **Circuit isolation.** A local gateway gives every *site in every tab* its own SOCKS username, so Tor puts them on different circuits (desktop). Loopback addresses go through Tor too, so web pages cannot probe services on your machine.
+- **RAM-only state.** Each tab is its own in-memory browser session. Closing it, or **New identity** (`Ctrl+Shift+U`), destroys cookies, cache, storage and circuits.
+- **One fingerprint for everyone.** Fixed user agent and client hints, UTC timezone (engine-level and in JavaScript), `en-US`, 4 cores, letterboxed viewport (rounded to 200×100), blank canvas readback, no WebGL, WebGPU, WebRTC, battery, gamepad or device enumeration, and 100 ms timers. Patched functions still report `[native code]`.
+- **Tracker blocking** with a built-in list of ~140 ad, analytics and fingerprinting hosts, plus your own rules. **HTTPS-only** with a per-site plain-HTTP escape hatch. **Downloads** are renamed safely (no bidi tricks, no reserved names) and executables are flagged; nothing is ever opened automatically.
 
-- **[v1.1.0-docs — offline specification bundle](https://github.com/wolverinenhm/perspicacity-browser/releases/tag/v1.1.0-docs)** — `perspicacity-specs-v1.1.0.html`, `.zip`, and `SHA256SUMS.txt`
+**SHADOW tabs and the agent** (desktop, `Ctrl+Shift+S`, then the **Agent** button)
+- The agent sees a lossy outline of the page (headings and controls with opaque handles), never the DOM, and the outline is read in an isolated world the page cannot touch.
+- The model must answer with one action from a closed set (click, type, select, navigate, scroll, wait, done) matching a JSON schema. Anything else is rejected. Page text is fenced as untrusted data.
+- Typing, navigating and clicking each need your **Allow once** (clicks can be pre-approved for one site). Passwords are masked in the approval card.
+- Every approval, refusal and action is written to an **HMAC-chained audit ledger** you can verify from the menu. Its key is protected by the OS keystore.
+- Models: **Ollama on your own computer** (default; private) or **Claude via the Anthropic API** (remote, your key, stored encrypted).
 
-Both artifacts are byte-reproducible from the tagged sources, and their SHA-256 digests are recorded by GitHub alongside the uploads. The bundle contains the same specifications you are reading here — still no browser, no installer, no APK.
+## What it does not do
 
-## Reading paths
+This is honest scope, as the specification asks.
 
-| If you are… | Read |
+- **The desktop build uses Chromium (via Electron), not the Tor-Browser-derived Gecko engine the spec chooses.** It is a different anonymity set from Tor Browser, fonts and some engine-level surfaces are not uniform, and Web Workers do not get the JavaScript shim (they do get the engine-level timezone and user agent). If your safety depends on anonymity, use Tor Browser.
+- **Android WebView** cannot attach per-site circuit credentials, so all Android tabs share Tor's circuit set (New Identity asks Tor for new circuits), and WebView announces itself in some client-hint headers. Per-tab storage separation needs a recent Android System WebView (multi-profile support); on older ones storage is wiped on exit and New Identity instead.
+- The agent's memory store (MNEMOSYNE), off-screen shadow rendering, OHTTP inference and the CaMeL dual-planner are specified but not implemented yet. See [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) for the full spec-to-code map.
+
+## Building from source
+
+```bash
+# Desktop (Node 22)
+cd desktop
+npm ci
+npm test                       # unit tests
+npm start                      # run (uses a running Tor Browser/tor, or vendor/tor)
+npx electron . --selftest      # end-to-end self-test in a real window
+node scripts/fetch-tor.js windows-x86_64 && npm run dist:win   # Windows installer (on Windows)
+
+# Android (JDK 17, Android SDK)
+cd android
+./gradlew :core:test :app:assembleRelease
+```
+
+To publish a release, push a tag such as `v0.1.0`; the workflow builds everything, runs the tests and attaches the installers. Tags with a dash (`v0.2.0-beta`) become pre-releases. To sign the APK with your own key, add the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`; otherwise the committed development key is used (fine for sideloading, not for a store).
+
+## Repository layout
+
+| Path | What |
 |---|---|
-| Evaluating the idea | ARCHITECTURE §0–§2, then §7 (engine decision) |
-| A security reviewer | ARCHITECTURE §4.2, §6, then FINGERPRINT §5.6 and AGENT §5 |
-| A browser platform engineer | ARCHITECTURE §4, NETWORK §2–§6, FINGERPRINT §6 |
-| An ML/agent engineer | AGENT §3–§6, then UTILITIES §5 |
-| A product owner | ARCHITECTURE §1.3, §9, then the amendments register |
+| [`desktop/`](desktop/) | Electron app: `src/main` (planes, Tor, gateway, filter, agent, ledger), `src/ui` (browser chrome), `test/` |
+| [`android/`](android/) | Android app (`app/`) and the pure-Java core shared logic (`core/`) with tests |
+| [`shared/`](shared/) | Fingerprint shim and tracker list used by both apps |
+| [`docs/spec/`](docs/spec/) | The five specification documents (rev 1.1) |
+| [`.github/workflows/build.yml`](.github/workflows/build.yml) | Tests, Windows installer, APKs, emulator smoke test, releases |
 
-## Seven decisions the specification rests on
+## The specification
 
-| ADR | Decision |
+| Document | Scope |
 |---|---|
-| 001 | Base engine: **Gecko, via a Tor-Browser-derived fork** — the anonymity properties cannot be retrofitted; agency must be built either way (weighted comparison in ARCHITECTURE §7.4, with kill criteria) |
-| 002 | New subsystems use a **Mojo-conforming capability-IPC contract**, bound to IPDL on Gecko, kept engine-neutral |
-| 003 | **No CDP or WebDriver BiDi is exposed to the agent**, and both are compiled out of release builds |
-| 004 | Renderers never hold storage paths or keys; storage is a capability service |
-| 005 | **Remote inference is forbidden in VEIL**; in SHADOW it is treated as an untrusted network party |
-| 006 | Two approval classes only: pre-approved capability classes, and human confirmations with unspoofable receipts |
-| 007 | Reproducible builds, signed updates: no telemetry, no crash upload, no remote Safe Browsing |
+| [ARCHITECTURE.md](docs/spec/ARCHITECTURE.md) | Process and IPC model, storage and key hierarchy, threat model, engine selection, delivery plan |
+| [NETWORK.md](docs/spec/NETWORK.md) | Embedded Tor, per-class clients, isolation tokens, leak matrix, pluggable transports |
+| [FINGERPRINT.md](docs/spec/FINGERPRINT.md) | Fingerprint uniformity, timing mitigations, human-emulation layer |
+| [AGENT.md](docs/spec/AGENT.md) | Shadow contexts, accessibility-tree distillation, hybrid inference, capability security |
+| [UTILITIES.md](docs/spec/UTILITIES.md) | Filter engine, new-identity rotation, download sanitiser, local automation |
 
-## Conventions
-
-- **RFC 2119** keywords (MUST / SHOULD / MAY) are normative.
-- Codenames: **VEIL** (hermetic plane), **SHADOW** (agent plane), **LATTICE** (the only bridge), **ARBITER** (policy), **CUSTOS** (keys), **MNEMOSYNE** (memory), **SENTRY** (egress), **AUDIT** (ledger).
-- Identity classes `ID-0`…`ID-3`; storage cells `CELL-V/S/D/K/A/P`; acceptance invariants `I1`…`I6`.
-- Engine-specific names (prefs, protocol layers, sandbox primitives) are given because the architecture depends on them, but should be re-verified against the chosen base at implementation time.
-
-## What these documents do not claim
-
-Perspicacity does **not** make a logged-in session anonymous; it does **not** defeat a global adversary who can correlate both ends of a circuit with a confident website-fingerprinting classifier; it does **not** guarantee swap-proof memory on a host with unencrypted swap; and it does **not** make prompt injection impossible — it makes *unauthorised effects* impossible for a defined effect set, and makes the residual risk visible and auditable. These limits are stated in the documents themselves rather than in a footer, because a privacy product's credibility is exactly the set of claims it refuses to make.
+The offline HTML edition of the specification is on the [v1.1.0-docs release](https://github.com/wolverinenhm/perspicacity-browser/releases/tag/v1.1.0-docs).

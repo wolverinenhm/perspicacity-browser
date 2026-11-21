@@ -1,0 +1,23 @@
+{
+  "name": "perspicacity",
+  "productName": "Perspicacity",
+  "version": "0.1.0",
+  "description": "Privacy browser with Tor routing, per-site circuit isolation, fingerprint uniformity and a sandboxed, human-approved agent.",
+  "main": "src/main/main.js",
+  "author": "Perspicacity project",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "selftest": "electron . --selftest",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.4.0"
+  },
+  "devDependencies": {
+    "electron": "44.10.2",
+    "electron-builder": "26.18.1"
+  }
+}

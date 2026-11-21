@@ -1,0 +1,188 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-linux:
+    name: Desktop tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: End-to-end self-test (real Electron window under Xvfb)
+        run: xvfb-run -a npx electron . --selftest --no-sandbox
+
+  desktop-windows:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Fetch the Tor Expert Bundle (checksum-verified)
+        run: node scripts/fetch-tor.js windows-x86_64 && cat vendor/tor/VERSION && ls -R vendor/tor | head -40
+      - name: Self-test from source, including a real Tor connection
+        run: npx electron . --selftest --selftest-tor
+      - name: Build the installer and the portable exe
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win --publish never
+      - name: Self-test the packaged app
+        run: ./dist/win-unpacked/Perspicacity.exe --selftest
+      - name: Collect
+        run: |
+          mkdir -p ../out
+          cp dist/*.exe ../out/
+          ls -l ../out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/*.exe
+          if-no-files-found: error
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Use the release keystore from secrets, when configured
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "PERSPICACITY_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          fi
+      - name: Core tests and APKs
+        env:
+          PERSPICACITY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          PERSPICACITY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PERSPICACITY_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :core:test :app:assembleRelease
+      - name: Collect and verify signatures
+        run: |
+          mkdir -p ../out
+          V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          for f in app/build/outputs/apk/release/*.apk; do
+            abi=$(basename "$f" .apk | sed -e 's/^app-//' -e 's/-release$//')
+            cp "$f" "../out/Perspicacity-${V}-${abi}.apk"
+          done
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          for f in ../out/*.apk; do "$APKSIGNER" verify --print-certs "$f" | head -3; done
+          ls -l ../out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*.apk
+          if-no-files-found: error
+
+  android-emulator:
+    name: Android smoke test (emulator)
+    needs: android
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: out
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash android/ci/emulator-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-output
+          path: ci-out/
+          if-no-files-found: ignore
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop-linux, desktop-windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat > notes.md <<NOTES
+          ## Install
+
+          **Windows:** download \`Perspicacity-Setup-*-x64.exe\` and run it (or use the \`Portable\` exe, no install). Windows SmartScreen may warn because the installer is not code-signed yet: choose *More info → Run anyway*.
+
+          **Android:** download \`Perspicacity-*-universal.apk\` (or the one for your phone's CPU, usually \`arm64-v8a\`), open it and allow installing from this source.
+
+          Both builds include Tor. Check the files against \`SHA256SUMS.txt\`.
+          NOTES
+          PRE=""
+          case "$TAG" in *-*) PRE="--prerelease";; esac
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 || gh release create "$TAG" --repo "$REPO" --title "Perspicacity $TAG" --notes-file notes.md $PRE
+          gh release upload "$TAG" dist/* --repo "$REPO" --clobber
