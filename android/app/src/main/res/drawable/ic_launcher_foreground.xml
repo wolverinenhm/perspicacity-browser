@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Eye outline -->
+    <path android:fillColor="#8B6CFF"
+        android:pathData="M18,54 C30,36 42,30 54,30 C66,30 78,36 90,54 C78,72 66,78 54,78 C42,78 30,72 18,54 Z" />
+    <path android:fillColor="#1A1626"
+        android:pathData="M24,54 C34,40 44,35 54,35 C64,35 74,40 84,54 C74,68 64,73 54,73 C44,73 34,68 24,54 Z" />
+    <!-- Iris and pupil -->
+    <path android:fillColor="#E8A838"
+        android:pathData="M54,40 A14,14 0 1,1 53.99,40 Z" />
+    <path android:fillColor="#1A1626"
+        android:pathData="M54,47.5 A6.5,6.5 0 1,1 53.99,47.5 Z" />
+    <path android:fillColor="#DDFFFFFF"
+        android:pathData="M50,45 A2.2,2.2 0 1,1 49.99,45 Z" />
+</vector>

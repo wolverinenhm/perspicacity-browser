@@ -1,0 +1,53 @@
+appId: org.perspicacity.browser
+productName: Perspicacity
+copyright: Perspicacity project
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**/*
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: ../shared
+    to: shared
+    filter: ["**/*"]
+  - from: vendor/tor
+    to: tor
+    filter: ["**/*", "!README.md"]
+asar: true
+publish: null
+# Hardening of the Electron binary itself (ADR-003, PSC-ARCH-001 §8.1).
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Perspicacity
+  deleteAppDataOnUninstall: false
+  artifactName: Perspicacity-Setup-${version}-x64.${ext}
+portable:
+  artifactName: Perspicacity-Portable-${version}-x64.${ext}
+linux:
+  icon: build/icon.png
+  category: Network
+  target:
+    - target: AppImage
+      arch: [x64]
+  artifactName: Perspicacity-${version}-x86_64.${ext}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';">
+  <title>Perspicacity</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body>
+  <header id="chrome">
+    <div id="tabstrip" role="tablist" aria-label="Tabs">
+      <div id="tabs"></div>
+      <button id="new-veil" class="icon" title="New VEIL tab (Ctrl+T)" aria-label="New VEIL tab">+</button>
+      <button id="new-shadow" class="pill shadow" title="New Shadow tab for agent work (Ctrl+Shift+S)">+ Shadow</button>
+    </div>
+    <div id="toolbar">
+      <button id="back" class="icon" title="Back (Alt+Left)" aria-label="Back">&#8592;</button>
+      <button id="forward" class="icon" title="Forward (Alt+Right)" aria-label="Forward">&#8594;</button>
+      <button id="reload" class="icon" title="Reload (Ctrl+R)" aria-label="Reload">&#8635;</button>
+      <form id="omnibox-form" autocomplete="off">
+        <span id="plane-badge" class="badge">VEIL</span>
+        <input id="omnibox" type="text" spellcheck="false" placeholder="Search or enter address" aria-label="Address and search bar">
+      </form>
+      <button id="tor-pill" class="pill" title="Tor status"><span class="dot"></span><span id="tor-text">Tor</span></button>
+      <span id="shield" class="pill subtle" title="Trackers blocked on this page">0 blocked</span>
+      <button id="identity" class="pill" title="New identity: close all VEIL tabs and discard their state (Ctrl+Shift+U)">New identity</button>
+      <button id="agent-toggle" class="pill shadow" title="Agent panel (Shadow tabs only)">Agent</button>
+      <button id="menu-btn" class="icon" title="Menu" aria-label="Menu">&#8942;</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <section id="page-newtab" class="page hidden">
+      <div class="hero">
+        <h1>Perspicacity</h1>
+        <p id="newtab-sub" class="muted"></p>
+        <form id="hero-form" autocomplete="off"><input id="hero-input" type="text" spellcheck="false" placeholder="Search privately"></form>
+        <ul id="newtab-facts" class="facts"></ul>
+      </div>
+    </section>
+
+    <section id="page-tor" class="page hidden">
+      <div class="hero">
+        <h2>Waiting for Tor</h2>
+        <p id="tor-msg" class="muted"></p>
+        <div class="progress"><div id="tor-bar"></div></div>
+        <p class="muted small">VEIL tabs never connect directly. Your page will load as soon as Tor is ready.</p>
+        <div class="row">
+          <button id="tor-retry" class="primary">Retry</button>
+          <button id="tor-settings">Connection settings</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="page-error" class="page hidden">
+      <div class="hero">
+        <h2 id="err-title">This page could not be loaded</h2>
+        <p id="err-desc" class="muted"></p>
+        <p id="err-url" class="mono small"></p>
+        <div class="row">
+          <button id="err-retry" class="primary">Try again</button>
+          <button id="err-http" class="hidden" title="Load this site without encryption for the rest of this tab">Load over plain HTTP</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="letterbox-note" class="hidden">Letterboxed: the page size is rounded so your window size is not an identifier.</div>
+  </main>
+
+  <aside id="agent-panel" class="hidden" aria-label="Agent">
+    <div class="panel-head">
+      <strong>Agent</strong>
+      <span id="agent-provider" class="muted small"></span>
+      <button id="agent-close" class="icon" aria-label="Close agent panel">&#215;</button>
+    </div>
+    <p id="agent-hint" class="muted small"></p>
+    <form id="agent-form">
+      <textarea id="agent-task" rows="3" placeholder="Describe a task for this Shadow tab, e.g. &quot;find the opening hours on this site&quot;"></textarea>
+      <label class="small"><input id="agent-autoclick" type="checkbox"> Allow clicks on this site without asking</label>
+      <div class="row">
+        <button id="agent-run" class="primary" type="submit">Run</button>
+        <button id="agent-stop" type="button" class="hidden">Stop</button>
+      </div>
+    </form>
+    <div id="approval" class="approval hidden" role="alertdialog" aria-live="assertive">
+      <div class="small muted">The agent wants to:</div>
+      <div id="approval-text" class="approval-text"></div>
+      <div class="row">
+        <button id="approve-yes" class="primary">Allow once</button>
+        <button id="approve-no">Deny</button>
+      </div>
+    </div>
+    <ol id="agent-log" class="log"></ol>
+  </aside>
+
+  <div id="menu" class="menu hidden" role="menu">
+    <button data-act="new-shadow">New Shadow tab</button>
+    <button data-act="open-in-shadow">Open this page in a Shadow tab</button>
+    <button data-act="settings">Settings</button>
+    <button data-act="ledger">Audit ledger</button>
+    <button data-act="about">About</button>
+  </div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <div class="sheet-head"><strong id="modal-title"></strong><button id="modal-close" class="icon" aria-label="Close">&#215;</button></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="ui.js"></script>
+</body>
+</html>

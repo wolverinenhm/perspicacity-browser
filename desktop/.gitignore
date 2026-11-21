@@ -1,0 +1,4 @@
+node_modules/
+dist/
+vendor/tor/*
+!vendor/tor/README.md
