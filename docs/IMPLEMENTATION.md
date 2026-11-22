@@ -17,7 +17,7 @@ Appendix H) lists them, so they can be argued with.
 | FP §3–§5 | Canonical values, letterboxing, timers, canvas, WebGL | `fingerprint.js`, `shared/veil-shim.js`, CDP emulation for timezone/locale/UA-CH, `layout()` letterboxing | same shim at document start |
 | FP §7 | Human-paced actuation | `agent.js` pacing, `browser.js` jittered input events | — |
 | AGT §3 | Semantic snapshot with opaque, generation-scoped handles | `snapshot.js` (isolated world) | — |
-| AGT §4.3 | Grammar-constrained decoding | `agent.js` `ACTION_SCHEMA` (Ollama `format`, Claude structured output) + re-validation | — |
+| AGT §4.3 | Grammar-constrained decoding | `agent.js` `ACTION_SCHEMA` + re-validation; `providers.js` asks each provider for the strongest mode it has (Ollama `format`, Claude structured output, OpenAI-style `json_schema`, else `json_object`, else prompt-only) and steps down automatically | — |
 | AGT §5.2–5.5 | Closed tool surface, HITL gates, untrusted-data fencing | `agent.js` `validateAction`, `approvalNeeded`, `buildMessages` | — |
 | ARCH §8.4 | AUDIT: HMAC-chained ledger | `ledger.js`, key via OS keystore (`settings.js`) | — |
 | UTL §2 | Native filter engine | `filter.js` + `shared/filters/trackers.txt` | `core/FilterEngine.java` (same rules, same tests) |
@@ -51,10 +51,12 @@ injection corpus (I4), and code signing for the Windows installer.
 ## Tests
 
 - `desktop/test/*.test.js` (`npm test`): site rules, filter, sanitiser, ledger tamper detection,
-  SOCKS gateway isolation and fail-closed behaviour, agent validation and approval flow, Tor config.
+  SOCKS gateway isolation and fail-closed behaviour, agent validation and approval flow, Tor config,
+  model providers (request shapes, structured-output fallback, model lists, 0.1.x settings migration).
 - `desktop/src/main/selftest.js` (`electron . --selftest`): a real window checks every canonical
   fingerprint value (in frames and workers), tracker blocking, per-tab SOCKS keys, fail-closed
-  loading, the agent filling a form with real input events, ledger verification and New
+  loading, the agent filling a form with real input events (deciding through the OpenAI-compatible
+  provider client against a local scripted model), ledger verification and New
   Identity. CI adds `--selftest-tor` on Windows to bootstrap the bundled Tor and confirm the exit
   with check.torproject.org.
 - `android/core` (`./gradlew :core:test`) and an emulator smoke test in CI that waits for the

@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const COMMANDS = new Set([
   'state', 'newTab', 'closeTab', 'activate', 'navigate', 'back', 'forward', 'reload', 'stop', 'allowHttp',
   'newIdentity', 'retryTor', 'overlay', 'zoom', 'getSettings', 'setSettings', 'toggleAgent', 'agentStart',
-  'agentStop', 'agentApprove', 'ledger', 'openInShadow',
+  'agentStop', 'agentApprove', 'ledger', 'openInShadow', 'listModels',
 ]);
 
 contextBridge.exposeInMainWorld('psp', {

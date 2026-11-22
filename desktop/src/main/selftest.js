@@ -95,6 +95,9 @@ document.getElementById('f').addEventListener('submit', (e) => {
 });
 </script></body></html>`;
 
+// Stand-in for an OpenAI-compatible model API (/v1/chat/completions), set per run.
+let chatHandler = null;
+
 function startServer() {
   let resolveReport;
   const report = new Promise((r) => { resolveReport = r; });
@@ -105,6 +108,16 @@ function startServer() {
       let body = '';
       req.on('data', (d) => { body += d; });
       req.on('end', () => { res.end('ok'); try { resolveReport(JSON.parse(body)); } catch (_) { resolveReport(null); } });
+      return;
+    }
+    if (req.url === '/v1/chat/completions' && req.method === 'POST' && chatHandler) {
+      let body = '';
+      req.on('data', (d) => { body += d; });
+      req.on('end', () => {
+        const content = JSON.stringify(chatHandler(JSON.parse(body), req.headers));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content } }] }));
+      });
       return;
     }
     res.writeHead(404); res.end();
@@ -149,7 +162,9 @@ async function runSelftest({ browser, filter, ledger }) {
     await waitForLoad(veil.wc);
     check('tracker request blocked', veil.blockedCount >= 1, veil.blockedCount);
 
-    // Shadow tab: the agent fills in the form with a scripted model and auto-approval.
+    // Shadow tab: the agent fills in the form, deciding through the real provider client
+    // (OpenAI-compatible protocol, as used for OpenAI/DeepSeek/Kimi/Qwen/...) against a local
+    // scripted model, with auto-approval.
     stage('opening Shadow tab');
     const shadow = await browser.createTab({ plane: 'shadow', url: `${base}/form` });
     await timeout(new Promise((res) => { const t = setInterval(() => { if (shadow.url.endsWith('/form') && !shadow.wc.isLoading()) { clearInterval(t); res(); } }, 100); }), 15000, 'form load');
@@ -167,12 +182,21 @@ async function runSelftest({ browser, filter, ledger }) {
     stage('running agent');
     let step = 0;
     const approvals = [];
+    const chatRequests = [];
+    chatHandler = (body, headers) => {
+      chatRequests.push({ model: body.model, format: body.response_format && body.response_format.type, auth: headers.authorization });
+      const user = body.messages.filter((m) => m.role === 'user').pop();
+      return script[Math.min(step++, script.length - 1)](user ? user.content : '');
+    };
+    browser.settings.update({ agent: { provider: 'custom', models: { custom: 'selftest-model' }, endpoints: { custom: `${base}/v1` } } });
+    browser.settings.writeApiKey('custom', 'selftest-key');
     const out = await timeout(browser.startAgent('Send the contact form with the name perspicacity', {
-      decide: async (messages) => script[Math.min(step++, script.length - 1)](messages[0].content),
       approve: async (req) => { approvals.push(req.description); return true; },
       pacing: [10, 20],
     }), 60000, 'agent run');
     check('agent finished', out.status === 'done', out);
+    check('agent decided through the OpenAI-compatible provider client', chatRequests.length === 3
+      && chatRequests.every((r) => r.model === 'selftest-model' && r.format === 'json_schema' && r.auth === 'Bearer selftest-key'), chatRequests);
     check('typing and clicking asked for approval', approvals.length === 2, approvals);
     const title = shadow.wc.getTitle();
     check('form submitted with real input events', title === 'submitted:perspicacity', title);

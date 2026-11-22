@@ -31,7 +31,7 @@ button.primary { background: var(--veil); color: #fff; }
 .small { font-size: 12px; }
 .mono { font-family: Consolas, "SF Mono", monospace; word-break: break-all; }
 .row { display: flex; gap: 8px; margin-top: 12px; justify-content: center; flex-wrap: wrap; }
-input[type=text], textarea, select { width: 100%; color: var(--fg); background: var(--bg); border: 1px solid #ffffff1f; border-radius: var(--radius); padding: 7px 10px; font: inherit; user-select: text; }
+input[type=text], input[type=password], textarea, select { width: 100%; color: var(--fg); background: var(--bg); border: 1px solid #ffffff1f; border-radius: var(--radius); padding: 7px 10px; font: inherit; user-select: text; }
 
 /* chrome */
 #chrome { position: fixed; inset: 0 0 auto 0; height: var(--chrome-h); background: var(--bg2); border-bottom: 1px solid #00000066; }
@@ -104,6 +104,10 @@ textarea { resize: vertical; min-height: 60px; }
 .field { margin: 12px 0; }
 .field > label { display: block; font-weight: 600; margin-bottom: 4px; }
 .field .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.inline { display: flex; gap: 6px; align-items: center; }
+.inline input { flex: 1; min-width: 0; }
+.inline button { white-space: nowrap; }
 .field.check label { display: flex; gap: 8px; align-items: flex-start; font-weight: normal; }
 .warn { color: var(--warn); }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid #ffffff22; padding: 9px 14px; border-radius: var(--radius); max-width: 80vw; z-index: 30; box-shadow: 0 8px 30px #0008; }
