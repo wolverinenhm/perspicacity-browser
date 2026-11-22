@@ -9,4 +9,14 @@
     <string name="new_identity">New identity</string>
     <string name="menu">Menu</string>
     <string name="reload">Reload</string>
+    <string name="agent">Agent</string>
+    <string name="model">Model</string>
+    <string name="close">Close</string>
+    <string name="approval_title">The agent wants to:</string>
+    <string name="deny">Deny</string>
+    <string name="allow_once">Allow once</string>
+    <string name="run">Run</string>
+    <string name="stop">Stop</string>
+    <string name="agent_task_hint">Describe a task for this page</string>
+    <string name="auto_clicks">Allow clicks on this site without asking</string>
 </resources>

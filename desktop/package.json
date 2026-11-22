@@ -1,7 +1,7 @@
 {
   "name": "perspicacity",
   "productName": "Perspicacity",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Privacy browser with Tor routing, per-site circuit isolation, fingerprint uniformity and a sandboxed, human-approved agent.",
   "main": "src/main/main.js",
   "author": "Perspicacity project",

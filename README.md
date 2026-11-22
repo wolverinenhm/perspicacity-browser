@@ -27,17 +27,17 @@ Every file is listed with its SHA-256 in `SHA256SUMS.txt` on the release page. R
 - **One fingerprint for everyone.** Fixed user agent and client hints, UTC timezone (engine-level and in JavaScript), `en-US`, 4 cores, letterboxed viewport (rounded to 200×100), blank canvas readback, no WebGL, WebGPU, WebRTC, battery, gamepad or device enumeration, and 100 ms timers. Patched functions still report `[native code]`.
 - **Tracker blocking** with a built-in list of ~140 ad, analytics and fingerprinting hosts, plus your own rules. **HTTPS-only** with a per-site plain-HTTP escape hatch. **Downloads** are renamed safely (no bidi tricks, no reserved names) and executables are flagged; nothing is ever opened automatically.
 
-**SHADOW tabs and the agent** (desktop, `Ctrl+Shift+S`, then the **Agent** button)
-- The agent sees a lossy outline of the page (headings and controls with opaque handles), never the DOM, and the outline is read in an isolated world the page cannot touch.
+**SHADOW tabs and the agent** (Windows: `Ctrl+Shift+S`, then the **Agent** button. Android: long-press **+** or menu → New Shadow tab, then the amber **✦** button)
+- The agent sees a lossy outline of the page (headings and controls with opaque handles), never the DOM. On Windows the outline is read in an isolated world the page cannot touch; Android WebView has no isolated worlds, so there the handle table hides under a random name in the page.
 - The model must answer with one action from a closed set (click, type, select, navigate, scroll, wait, done) matching a JSON schema. Anything else is rejected. Page text is fenced as untrusted data.
 - Typing, navigating and clicking each need your **Allow once** (clicks can be pre-approved for one site). Passwords are masked in the approval card.
 - Every approval, refusal and action is written to an **HMAC-chained audit ledger** you can verify from the menu. Its key is protected by the OS keystore.
-- Models (Settings → Agent model):
-  - **On your computer, private:** Ollama (default) or LM Studio.
+- Models (Windows: Settings → Agent model; Android: menu → Agent model):
+  - **On your computer, private:** Ollama (default) or LM Studio. On Android, point the endpoint at the computer that runs them on your network, for example `http://192.168.1.20:11434`.
   - **Hosted, with your own API key:** Claude (Anthropic), OpenAI, Google Gemini, DeepSeek, Kimi (Moonshot AI), Qwen (Alibaba Cloud Model Studio), Mistral, xAI Grok, GLM (Zhipu / Z.ai), Groq, Together AI and OpenRouter.
   - **Custom:** any other OpenAI-compatible API (vLLM, LiteLLM, a company gateway, or a regional endpoint such as `api.moonshot.cn`).
 
-  **List models** asks the provider which models your key can use. Keys are stored encrypted with the operating system keystore. A hosted model is a network party: it receives the page outline from Shadow tabs, never anything from VEIL.
+  **List models** asks the provider which models your key can use. Keys are stored encrypted with the operating system keystore (Windows DPAPI, Android Keystore). A hosted model is a network party: it receives the page outline from Shadow tabs, never anything from VEIL.
 
 ## What it does not do
 
