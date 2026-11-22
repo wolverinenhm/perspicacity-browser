@@ -64,13 +64,18 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Perspicacity for Android: the VEIL plane of the specification on Android WebView.
- * Every tab has its own WebView profile (cookies, storage, cache) when the device's WebView
- * supports it; all traffic goes through the Tor daemon inside the app, fail-closed; the
- * canonical fingerprint shim runs at document start; trackers are blocked; nothing is kept
- * when the app closes or the user asks for a new identity.
+ * Perspicacity for Android.
+ *
+ * VEIL tabs (the default): every tab has its own WebView profile (cookies, storage, cache)
+ * when the device's WebView supports it; all traffic goes through the Tor daemon inside the
+ * app, fail-closed; the canonical fingerprint shim runs at document start; trackers are
+ * blocked; nothing is kept when the app closes or the user asks for a new identity.
+ *
+ * SHADOW tabs: one persistent profile shared by Shadow tabs only, never by VEIL, and the only
+ * place the approval-gated agent can work (AgentController / WebViewDriver).
  */
-public class MainActivity extends Activity implements TorController.Listener {
+public class MainActivity extends Activity implements TorController.Listener, AgentController.Listener {
+    static final String SHADOW_PROFILE = "shadow";
     private static final String PREFS = "settings";
     private static final String DEAD_PROXY = "socks5://127.0.0.1:9"; // nothing listens: every load fails
     private static final Map<String, String> ENGINES = new HashMap<>();
@@ -82,7 +87,8 @@ public class MainActivity extends Activity implements TorController.Listener {
         ENGINES.put("Mojeek", "https://www.mojeek.com/search?q=%s");
     }
 
-    static final class Tab {
+    static final class Tab implements WebViewDriver.TabAccess {
+        boolean shadow;
         WebView web;
         String profile;
         volatile String url = "";
@@ -91,6 +97,10 @@ public class MainActivity extends Activity implements TorController.Listener {
         final AtomicInteger blocked = new AtomicInteger();
         final Set<String> httpAllowed = Collections.synchronizedSet(new HashSet<>());
         String pendingUrl;
+
+        @Override public WebView web() { return web; }
+        @Override public String url() { return url; }
+        @Override public int progress() { return progress; }
     }
 
     private final List<Tab> tabs = new ArrayList<>();
@@ -117,6 +127,13 @@ public class MainActivity extends Activity implements TorController.Listener {
     private TextView torPill;
     private ProgressBar progress;
     private TextView tabsBtn;
+    private TextView agentBtn;
+    private View agentPanel;
+    private TextView agentLog;
+    private EditText agentTask;
+    private android.widget.Button agentRun;
+    private AgentController agent;
+    private boolean agentOpen;
     private final Executor mainExecutor = r -> runOnUiThread(r);
 
     // ------------------------------------------------------------------------
@@ -136,10 +153,18 @@ public class MainActivity extends Activity implements TorController.Listener {
         torPill = findViewById(R.id.tor_status);
         progress = findViewById(R.id.progress);
         tabsBtn = findViewById(R.id.btn_tabs);
+        agentBtn = findViewById(R.id.btn_agent);
+        agentPanel = findViewById(R.id.agent_panel);
+        agentLog = findViewById(R.id.agent_log);
+        agentTask = findViewById(R.id.agent_task);
+        agentRun = findViewById(R.id.agent_run);
+        agent = new AgentController(this, new SecretStore(this));
+        agent.setListener(this);
 
         docStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
         profilesSupported = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE);
         proxySupported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE);
+        Log.i("Perspicacity", "webview features: profiles=" + profilesSupported + " proxy=" + proxySupported + " docStart=" + docStartSupported);
 
         String major = chromeMajor();
         userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + major + ".0.0.0 Mobile Safari/537.36";
@@ -152,7 +177,7 @@ public class MainActivity extends Activity implements TorController.Listener {
         applyNetworkPolicy();
         if (routeTor()) tor.start();
 
-        Tab first = newTab();
+        Tab first = newTab(false);
         Intent intent = getIntent();
         if (intent != null && intent.getData() != null) navigate(first, intent.getData().toString());
         updateUi();
@@ -161,11 +186,12 @@ public class MainActivity extends Activity implements TorController.Listener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (intent != null && intent.getData() != null) navigate(newTab(), intent.getData().toString());
+        if (intent != null && intent.getData() != null) navigate(newTab(false), intent.getData().toString());
     }
 
     @Override
     protected void onDestroy() {
+        if (agent != null) agent.stop();
         for (Tab t : new ArrayList<>(tabs)) destroyTab(t);
         tabs.clear();
         wipeLeftovers();
@@ -258,12 +284,34 @@ public class MainActivity extends Activity implements TorController.Listener {
 
     // ---- tabs -------------------------------------------------------------------
     @SuppressLint("SetJavaScriptEnabled")
-    private Tab newTab() {
+    Tab newTab(boolean shadow) {
+        boolean debuggable = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        if (shadow && !profilesSupported && !debuggable) { // debug builds allow it so emulator tests run on older WebViews
+            toast("Shadow tabs need a newer Android System WebView (multi-profile support), so their storage can be kept apart from VEIL. Update it from the Play Store.");
+            return active;
+        }
         final Tab tab = new Tab();
+        tab.shadow = shadow;
         WebView w = new WebView(this);
         tab.web = w;
         CookieManager cookies = CookieManager.getInstance();
-        if (profilesSupported) {
+        if (shadow) {
+            if (profilesSupported) {
+                try {
+                    tab.profile = SHADOW_PROFILE;
+                    ProfileStore.getInstance().getOrCreateProfile(SHADOW_PROFILE);
+                    WebViewCompat.setProfile(w, SHADOW_PROFILE);
+                    cookies = ProfileStore.getInstance().getProfile(SHADOW_PROFILE).getCookieManager();
+                } catch (Throwable t) {
+                    tab.profile = null;
+                    if (!debuggable) {
+                        w.destroy();
+                        toast("Could not open the Shadow profile: " + t.getMessage());
+                        return active;
+                    }
+                }
+            }
+        } else if (profilesSupported) {
             try {
                 tab.profile = "veil-" + UUID.randomUUID();
                 ProfileStore.getInstance().getOrCreateProfile(tab.profile);
@@ -283,7 +331,8 @@ public class MainActivity extends Activity implements TorController.Listener {
         s.setSupportMultipleWindows(false); // window.open and target=_blank stay in this tab
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setUserAgentString(userAgent);
-        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        s.setCacheMode(shadow ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_NO_CACHE);
+        if (shadow) s.setJavaScriptEnabled(true); // the agent needs scripts to read the page
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setTextZoom(100);
         s.setSafeBrowsingEnabled(false); // ADR-007: no remote Safe Browsing lookups
@@ -293,7 +342,7 @@ public class MainActivity extends Activity implements TorController.Listener {
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(w, false);
 
-        if (docStartSupported && !shimScript.isEmpty()) {
+        if (!shadow && docStartSupported && !shimScript.isEmpty()) {
             try {
                 WebViewCompat.addDocumentStartJavaScript(w, shimScript, Collections.singleton("*"));
             } catch (Throwable ignored) {
@@ -325,7 +374,7 @@ public class MainActivity extends Activity implements TorController.Listener {
         int idx = tabs.indexOf(tab);
         tabs.remove(tab);
         destroyTab(tab);
-        if (tabs.isEmpty()) { active = null; newTab(); return; }
+        if (tabs.isEmpty()) { active = null; newTab(false); return; }
         if (active == tab) { active = null; switchTo(tabs.get(Math.max(0, idx - 1))); }
         updateUi();
     }
@@ -339,7 +388,7 @@ public class MainActivity extends Activity implements TorController.Listener {
             tab.web.clearFormData();
             tab.web.destroy();
         } catch (Throwable ignored) { }
-        if (tab.profile != null) {
+        if (tab.profile != null && !tab.profile.equals(SHADOW_PROFILE)) {
             try { ProfileStore.getInstance().deleteProfile(tab.profile); } catch (Throwable ignored) {
                 // still referenced; wipeLeftovers() removes it at next start
             }
@@ -372,17 +421,20 @@ public class MainActivity extends Activity implements TorController.Listener {
     }
 
     private void newIdentity() {
-        for (Tab t : new ArrayList<>(tabs)) destroyTab(t);
-        tabs.clear();
-        active = null;
+        for (Tab t : new ArrayList<>(tabs)) {
+            if (t.shadow) continue; // Shadow is a separate, persistent identity
+            tabs.remove(t);
+            if (active == t) { content.removeView(t.web); active = null; }
+            destroyTab(t);
+        }
         wipeLeftovers();
         if (tor != null) tor.newIdentity();
-        newTab();
-        toast("New identity: tabs, cookies and storage discarded; Tor will use new circuits.");
+        newTab(false);
+        toast("New identity: VEIL tabs, cookies and storage discarded; Tor will use new circuits. Shadow tabs are kept.");
     }
 
     // ---- navigation ------------------------------------------------------------
-    private void navigate(Tab tab, String input) {
+    void navigate(Tab tab, String input) {
         String url = Site.omniboxToUrl(input, ENGINES.get(engineName()));
         if (url == null) { toast("Perspicacity only opens http and https addresses."); return; }
         String up = Site.httpsUpgrade(url);
@@ -502,7 +554,21 @@ public class MainActivity extends Activity implements TorController.Listener {
             else if (active.pendingUrl != null || active.web.getUrl() == null) { if (!active.url.isEmpty()) navigate(active, active.url); }
             else active.web.reload();
         });
-        findViewById(R.id.btn_new).setOnClickListener(v -> { newTab(); urlBar.requestFocus(); showKeyboard(); });
+        findViewById(R.id.btn_new).setOnClickListener(v -> { newTab(false); urlBar.requestFocus(); showKeyboard(); });
+        findViewById(R.id.btn_new).setOnLongClickListener(v -> { if (newTab(true) != null && active != null && active.shadow) { urlBar.requestFocus(); showKeyboard(); } return true; });
+        agentBtn.setOnClickListener(v -> { agentOpen = !agentOpen; updateAgentUi(); });
+        findViewById(R.id.agent_close).setOnClickListener(v -> { agentOpen = false; updateAgentUi(); });
+        findViewById(R.id.agent_settings).setOnClickListener(v -> showAgentSettings());
+        agentRun.setOnClickListener(v -> {
+            if (agent.running()) { agent.stop(); return; }
+            if (active == null || !active.shadow) { toast("The agent works only in Shadow tabs."); return; }
+            if (active.url.isEmpty() || active.pendingUrl != null) { toast("Load a page in this Shadow tab first."); return; }
+            hideKeyboard();
+            String err = agent.start(active, agentTask.getText().toString(), ((android.widget.CheckBox) findViewById(R.id.agent_auto_clicks)).isChecked(), null, null);
+            if (err != null) toast(err);
+        });
+        findViewById(R.id.agent_allow).setOnClickListener(v -> { AgentController.Approval a = agent.pending(); if (a != null) agent.answer(a.id, true); });
+        findViewById(R.id.agent_deny).setOnClickListener(v -> { AgentController.Approval a = agent.pending(); if (a != null) agent.answer(a.id, false); });
         tabsBtn.setOnClickListener(v -> showTabs());
         findViewById(R.id.btn_identity).setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("New identity")
@@ -518,7 +584,7 @@ public class MainActivity extends Activity implements TorController.Listener {
         for (int i = 0; i < tabs.size(); i++) {
             Tab t = tabs.get(i);
             String label = t.title != null && !t.title.isEmpty() ? t.title : (t.url.isEmpty() ? "New tab" : t.url);
-            items[i] = (t == active ? "● " : "   ") + label;
+            items[i] = (t == active ? "● " : "   ") + (t.shadow ? "[Shadow] " : "") + label;
         }
         new AlertDialog.Builder(this)
                 .setTitle("Tabs (" + tabs.size() + ")")
@@ -535,7 +601,10 @@ public class MainActivity extends Activity implements TorController.Listener {
         m.getMenu().add(0, 3, 2, routeTor() ? "Route through Tor: on" : "Route through Tor: OFF");
         m.getMenu().add(0, 4, 3, "Load this site over plain HTTP");
         m.getMenu().add(0, 5, 4, "Clear everything and exit");
-        m.getMenu().add(0, 6, 5, "About");
+        m.getMenu().add(0, 7, 5, "New Shadow tab (for the agent)");
+        m.getMenu().add(0, 8, 6, "Agent model");
+        m.getMenu().add(0, 9, 7, "Audit ledger");
+        m.getMenu().add(0, 6, 8, "About");
         m.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1: chooseEngine(); return true;
@@ -555,6 +624,9 @@ public class MainActivity extends Activity implements TorController.Listener {
                     return true;
                 case 5: finishAndRemoveTask(); return true;
                 case 6: showAbout(); return true;
+                case 7: newTab(true); return true;
+                case 8: showAgentSettings(); return true;
+                case 9: new AlertDialog.Builder(this).setTitle("Audit ledger").setMessage(agent.ledgerReport()).setPositiveButton("OK", null).show(); return true;
                 default: return false;
             }
         });
@@ -591,11 +663,12 @@ public class MainActivity extends Activity implements TorController.Listener {
     }
 
     private void showAbout() {
-        String msg = "Perspicacity 0.1 for Android.\n\n"
+        String msg = "Perspicacity " + versionName() + " for Android.\n\n"
                 + "• Tor runs inside the app; nothing loads until it is connected.\n"
                 + "• " + (profilesSupported ? "Each tab has its own cookie and storage profile." : "This WebView cannot separate tabs; storage is wiped on exit and New Identity.") + "\n"
                 + "• Fingerprint shield: " + (docStartSupported ? "active at document start." : "best effort (older WebView).") + "\n"
-                + "• " + filter.ruleCount() + " tracker rules.\n\n"
+                + "• " + filter.ruleCount() + " tracker rules.\n"
+                + "• Shadow tabs keep their own storage and are the only place the agent can work. Every effect it wants needs your OK, and each decision is written to an HMAC-chained audit ledger.\n\n"
                 + "Android WebView is not Tor Browser: it shares one Tor circuit set across sites and announces itself as WebView in some request headers. Use Tor Browser when your safety depends on anonymity.";
         new AlertDialog.Builder(this).setTitle("About").setMessage(msg).setPositiveButton("OK", null).show();
     }
@@ -622,6 +695,11 @@ public class MainActivity extends Activity implements TorController.Listener {
         }
         tabsBtn.setText(String.valueOf(tabs.size()));
         if (active == null) return;
+        urlBar.setHint(active.shadow ? "Shadow tab: search or enter address" : getString(R.string.url_hint));
+        urlBar.setTextColor(getColor(active.shadow ? R.color.amber : R.color.fg));
+        agentBtn.setVisibility(active.shadow ? View.VISIBLE : View.GONE);
+        if (!active.shadow && agentOpen && !agent.running()) agentOpen = false;
+        updateAgentUi();
         if (!urlBar.hasFocus()) urlBar.setText(active.url);
         boolean blank = active.url.isEmpty();
         boolean waiting = active.pendingUrl != null && !networkReady;
@@ -659,6 +737,194 @@ public class MainActivity extends Activity implements TorController.Listener {
     private void showKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.showSoftInput(urlBar, InputMethodManager.SHOW_IMPLICIT);
+    }
+
+    // ---- agent --------------------------------------------------------------------------
+    AgentController agent() { return agent; }
+
+    @Override
+    public void onAgentChanged() { updateAgentUi(); }
+
+    private void updateAgentUi() {
+        if (isFinishing() || agentPanel == null) return;
+        boolean show = agentOpen || agent.running() || agent.pending() != null;
+        agentPanel.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        ((TextView) findViewById(R.id.agent_provider)).setText(agent.label());
+        TextView hint = findViewById(R.id.agent_hint);
+        if (active == null || !active.shadow) hint.setText("The agent works only in Shadow tabs, never in VEIL tabs.");
+        else if (active.url.isEmpty()) hint.setText("Load a page in this Shadow tab, then describe what to do.");
+        else hint.setText("The agent sees an outline of this page and asks before typing, opening pages or clicking.");
+        StringBuilder b = new StringBuilder();
+        for (String line : agent.log()) b.append(line).append('\n');
+        agentLog.setText(b.length() == 0 ? "No task yet." : b.toString().trim());
+        View scroll = findViewById(R.id.agent_log_scroll);
+        scroll.post(() -> ((android.widget.ScrollView) scroll).fullScroll(View.FOCUS_DOWN));
+        AgentController.Approval a = agent.pending();
+        findViewById(R.id.agent_approval).setVisibility(a != null ? View.VISIBLE : View.GONE);
+        if (a != null) ((TextView) findViewById(R.id.agent_approval_text)).setText(a.description);
+        agentRun.setText(agent.running() ? R.string.stop : R.string.run);
+        agentTask.setEnabled(!agent.running());
+    }
+
+    private void showAgentSettings() {
+        final org.perspicacity.core.agent.Providers.Config cfg = agent.config();
+        final List<org.perspicacity.core.agent.Providers.Provider> list = org.perspicacity.core.agent.Providers.all();
+        final Map<String, String> typedKeys = new HashMap<>();
+        final int pad = (int) (16 * getResources().getDisplayMetrics().density);
+
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        box.setPadding(pad, pad / 2, pad, 0);
+        android.widget.Spinner spinner = new android.widget.Spinner(this);
+        String[] names = new String[list.size()];
+        int selected = 0;
+        for (int i = 0; i < list.size(); i++) {
+            org.perspicacity.core.agent.Providers.Provider p = list.get(i);
+            names[i] = p.name + (agent.hasApiKey(p.id) ? " ✓" : "");
+            if (p.id.equals(cfg.provider)) selected = i;
+        }
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_item, names);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        TextView hint = new TextView(this);
+        hint.setTextColor(getColor(R.color.muted));
+        hint.setTextSize(12);
+        TextView privacy = new TextView(this);
+        privacy.setTextColor(getColor(R.color.muted));
+        privacy.setTextSize(12);
+        privacy.setText("A hosted model is a network party: it receives the outline of the Shadow page the agent is working on. VEIL tabs are never sent. Model requests go directly to the provider, not through Tor.");
+        android.widget.AutoCompleteTextView model = new android.widget.AutoCompleteTextView(this);
+        model.setSingleLine(true);
+        model.setThreshold(0);
+        model.setOnClickListener(v -> model.showDropDown());
+        android.widget.Button listBtn = new android.widget.Button(this);
+        listBtn.setText("List models");
+        TextView status = new TextView(this);
+        status.setTextColor(getColor(R.color.muted));
+        status.setTextSize(12);
+        EditText endpoint = new EditText(this);
+        endpoint.setSingleLine(true);
+        endpoint.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        EditText key = new EditText(this);
+        key.setSingleLine(true);
+        key.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText steps = new EditText(this);
+        steps.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        steps.setText(String.valueOf(agent.maxSteps()));
+        TextView keyLabel = label("API key (stored encrypted in the Android Keystore; leave empty to keep, type a space to remove)");
+
+        box.addView(label("Provider"));
+        box.addView(spinner);
+        box.addView(hint);
+        box.addView(label("Model"));
+        box.addView(model);
+        box.addView(listBtn);
+        box.addView(status);
+        box.addView(label("Endpoint (empty = default shown)"));
+        box.addView(endpoint);
+        box.addView(keyLabel);
+        box.addView(key);
+        box.addView(label("Max agent steps"));
+        box.addView(steps);
+        box.addView(privacy);
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.addView(box);
+
+        final String[] current = {cfg.provider};
+        final Runnable stash = () -> {
+            cfg.models.put(current[0], model.getText().toString().trim());
+            cfg.endpoints.put(current[0], endpoint.getText().toString().trim());
+            String k = key.getText().toString();
+            if (!k.isEmpty()) typedKeys.put(current[0], k);
+        };
+        final java.util.function.Consumer<String> load = id -> {
+            org.perspicacity.core.agent.Providers.Provider p = org.perspicacity.core.agent.Providers.get(id);
+            current[0] = id;
+            hint.setText(p.hint);
+            String m = cfg.models.get(id);
+            model.setText(m == null ? "" : m);
+            model.setHint(p.model.isEmpty() ? "model name" : p.model);
+            model.setAdapter(null);
+            String e = cfg.endpoints.get(id);
+            endpoint.setText(e == null ? "" : e);
+            endpoint.setHint(p.endpoint.isEmpty() ? (p.local ? "http://192.168.1.10:" + (p.id.equals("ollama") ? "11434" : "1234/v1") : "https://your-server/v1") : p.endpoint);
+            boolean keyed = !"ollama".equals(p.kind);
+            keyLabel.setVisibility(keyed ? View.VISIBLE : View.GONE);
+            key.setVisibility(keyed ? View.VISIBLE : View.GONE);
+            String typed = typedKeys.get(id);
+            key.setText(typed == null ? "" : typed);
+            key.setHint(agent.hasApiKey(id) ? "Saved" : (p.needsKey ? (p.keyHint.isEmpty() ? "Paste your API key" : p.keyHint) : "Optional"));
+            status.setText("");
+        };
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                String next = list.get(position).id;
+                if (next.equals(current[0])) return;
+                stash.run();
+                load.accept(next);
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
+        spinner.setSelection(selected);
+        load.accept(cfg.provider);
+        listBtn.setOnClickListener(v -> {
+            stash.run();
+            final String id = current[0];
+            final String typed = typedKeys.get(id);
+            final String k = typed != null && !typed.trim().isEmpty() ? typed.trim() : agent.apiKey(id);
+            status.setText("Asking the provider…");
+            listBtn.setEnabled(false);
+            new Thread(() -> {
+                String msg;
+                List<String> models = null;
+                try {
+                    models = org.perspicacity.core.agent.Providers.listModels(id, cfg, k, agent.http);
+                    msg = models.isEmpty() ? "The provider returned no models." : models.size() + " models available. Tap the Model box to pick one.";
+                } catch (Exception ex) {
+                    msg = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+                }
+                final String m = msg;
+                final List<String> found = models;
+                runOnUiThread(() -> {
+                    listBtn.setEnabled(true);
+                    if (!id.equals(current[0])) return;
+                    status.setText(m);
+                    if (found != null && !found.isEmpty()) {
+                        model.setAdapter(new android.widget.ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, found));
+                        model.requestFocus();
+                        model.showDropDown();
+                    }
+                });
+            }, "perspicacity-models").start();
+        });
+
+        new AlertDialog.Builder(this)
+                .setTitle("Agent model")
+                .setView(sv)
+                .setPositiveButton("Save", (d, w) -> {
+                    stash.run();
+                    cfg.provider = current[0];
+                    for (Map.Entry<String, String> e : typedKeys.entrySet()) agent.setApiKey(e.getKey(), e.getValue().trim().isEmpty() ? null : e.getValue());
+                    try { agent.setMaxSteps(Integer.parseInt(steps.getText().toString().trim())); } catch (NumberFormatException ignored) { }
+                    agent.saveConfig(cfg);
+                    toast("Agent model: " + agent.label());
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private TextView label(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(getColor(R.color.fg));
+        t.setTextSize(13);
+        t.setPadding(0, (int) (12 * getResources().getDisplayMetrics().density), 0, 0);
+        return t;
+    }
+
+    private String versionName() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return ""; }
     }
 
     // ---- fingerprint shim ----------------------------------------------------------

@@ -104,6 +104,179 @@
     </FrameLayout>
 
     <LinearLayout
+        android:id="@+id/agent_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg3"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/agent"
+                android:textColor="@color/amber"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/agent_provider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/agent_settings"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/model"
+                android:textColor="@color/veil"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/agent_close"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:contentDescription="@string/close"
+                android:gravity="center"
+                android:text="✕"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/agent_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
+
+        <ScrollView
+            android:id="@+id/agent_log_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:layout_marginTop="6dp"
+            android:background="@color/bg">
+
+            <TextView
+                android:id="@+id/agent_log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:textColor="@color/fg"
+                android:textIsSelectable="true"
+                android:textSize="12sp" />
+        </ScrollView>
+
+        <LinearLayout
+            android:id="@+id/agent_approval"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/pill"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/approval_title"
+                android:textColor="@color/amber"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/agent_approval_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/fg"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="end"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/agent_deny"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/deny"
+                    android:textColor="@color/muted" />
+
+                <Button
+                    android:id="@+id/agent_allow"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/allow_once"
+                    android:textColor="@color/ok" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/agent_task"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@drawable/pill"
+                android:hint="@string/agent_task_hint"
+                android:importantForAutofill="no"
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLines="3"
+                android:minHeight="40dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="@color/fg"
+                android:textColorHint="@color/muted"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/agent_run"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/run"
+                android:textColor="@color/amber" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/agent_auto_clicks"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/auto_clicks"
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="52dp"
         android:background="@color/bg2"
@@ -114,6 +287,7 @@
         <TextView android:id="@+id/btn_reload" style="@style/BarButton" android:contentDescription="@string/reload" android:text="↻" />
         <TextView android:id="@+id/btn_tabs" style="@style/BarButton" android:contentDescription="@string/tabs" android:text="1" />
         <TextView android:id="@+id/btn_new" style="@style/BarButton" android:contentDescription="@string/new_tab" android:text="+" />
+        <TextView android:id="@+id/btn_agent" style="@style/BarButton" android:contentDescription="@string/agent" android:text="✦" android:textColor="@color/amber" android:visibility="gone" />
         <TextView android:id="@+id/btn_identity" style="@style/BarButton" android:contentDescription="@string/new_identity" android:text="⟲" android:textColor="@color/veil" />
         <TextView android:id="@+id/btn_menu" style="@style/BarButton" android:contentDescription="@string/menu" android:text="⋮" />
     </LinearLayout>

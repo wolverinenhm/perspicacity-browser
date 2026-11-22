@@ -10,8 +10,9 @@ android {
         applicationId = "org.perspicacity.browser"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // One fixed key for every build, so a new APK installs over the previous one. CI uses the
@@ -80,4 +81,8 @@ dependencies {
     implementation("info.guardianproject:tor-android:0.4.8.22")
     implementation("info.guardianproject:jtorctl:0.4.5.7")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

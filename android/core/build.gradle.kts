@@ -8,6 +8,9 @@ java {
 }
 
 dependencies {
+    // Android ships org.json in the platform; on the JVM (tests) it comes from Maven.
+    compileOnly("org.json:json:20240303")
+    testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
 }
 
