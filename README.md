@@ -32,7 +32,12 @@ Every file is listed with its SHA-256 in `SHA256SUMS.txt` on the release page. R
 - The model must answer with one action from a closed set (click, type, select, navigate, scroll, wait, done) matching a JSON schema. Anything else is rejected. Page text is fenced as untrusted data.
 - Typing, navigating and clicking each need your **Allow once** (clicks can be pre-approved for one site). Passwords are masked in the approval card.
 - Every approval, refusal and action is written to an **HMAC-chained audit ledger** you can verify from the menu. Its key is protected by the OS keystore.
-- Models: **Ollama on your own computer** (default; private) or **Claude via the Anthropic API** (remote, your key, stored encrypted).
+- Models (Settings → Agent model):
+  - **On your computer, private:** Ollama (default) or LM Studio.
+  - **Hosted, with your own API key:** Claude (Anthropic), OpenAI, Google Gemini, DeepSeek, Kimi (Moonshot AI), Qwen (Alibaba Cloud Model Studio), Mistral, xAI Grok, GLM (Zhipu / Z.ai), Groq, Together AI and OpenRouter.
+  - **Custom:** any other OpenAI-compatible API (vLLM, LiteLLM, a company gateway, or a regional endpoint such as `api.moonshot.cn`).
+
+  **List models** asks the provider which models your key can use. Keys are stored encrypted with the operating system keystore. A hosted model is a network party: it receives the page outline from Shadow tabs, never anything from VEIL.
 
 ## What it does not do
 

@@ -131,44 +131,7 @@ function buildMessages(task, snapshot, history) {
   return [{ role: 'user', content: `TASK: ${task}\n\nPREVIOUS ACTIONS:\n${past}\n\n${page}\n\nChoose the next action.` }];
 }
 
-// ---- model providers ---------------------------------------------------------
-
-async function callOllama(cfg, messages, signal) {
-  const res = await fetch(new URL('/api/chat', cfg.ollamaUrl), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: cfg.ollamaModel,
-      stream: false,
-      format: ACTION_SCHEMA,
-      options: { temperature: 0.1 },
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
-    }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`Ollama returned HTTP ${res.status}. Is it running at ${cfg.ollamaUrl} with model "${cfg.ollamaModel}" pulled?`);
-  const data = await res.json();
-  return data && data.message ? data.message.content : '';
-}
-
-async function callAnthropic(cfg, apiKey, messages, signal) {
-  // Lazy-load: the SDK is only needed when the user picks this provider.
-  const Anthropic = require('@anthropic-ai/sdk');
-  const AnthropicClient = Anthropic.default || Anthropic;
-  const client = new AnthropicClient({ apiKey });
-  const response = await client.beta.messages.create({
-    model: cfg.anthropicModel || 'claude-opus-5-5',
-    max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: ACTION_SCHEMA } },
-    system: SYSTEM_PROMPT,
-    messages,
-  }, { signal });
-  if (response.stop_reason === 'refusal') throw new Error('The model declined this step.');
-  const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return text;
-}
+// Model providers live in providers.js.
 
 // ---- runner -----------------------------------------------------------------
 
@@ -268,5 +231,5 @@ class AgentRun extends EventEmitter {
 
 module.exports = {
   AgentRun, ActionError, validateAction, approvalNeeded, handlesFromOutline, buildMessages,
-  callOllama, callAnthropic, ACTION_SCHEMA, SYSTEM_PROMPT,
+  ACTION_SCHEMA, SYSTEM_PROMPT,
 };

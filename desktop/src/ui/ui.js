@@ -133,7 +133,7 @@
     $('agent-panel').classList.toggle('hidden', !state.agent.open);
     if (!state.agent.open) return;
     const a = state.agent;
-    $('agent-provider').textContent = a.provider === 'anthropic' ? 'Claude (remote)' : 'Ollama (local)';
+    $('agent-provider').textContent = a.providerLabel || a.provider;
     const usable = tab && tab.plane === 'shadow' && tab.url;
     $('agent-hint').textContent = !tab || tab.plane !== 'shadow'
       ? 'The agent works only in Shadow tabs, never in VEIL. Open a Shadow tab (Ctrl+Shift+S) and load a page.'
@@ -176,17 +176,86 @@
         el('span', {}, el('b', { text: 'Let VEIL tabs load without Tor ' }), el('span', { class: 'warn', text: 'Not anonymous: sites see your IP address. VEIL stays RAM-only with a uniform fingerprint.' })))),
       field('Extra filter rules', el('textarea', { id: 's-filters', rows: '4', placeholder: '||example-tracker.com^\n@@||site-that-broke.com^' }), 'Adblock-style host rules, one per line.'),
       el('h3', { text: 'Agent model' }),
-      field('Provider', select('s-provider', [['ollama', 'Ollama on this computer (private, default)'], ['anthropic', 'Claude via the Anthropic API (remote)']], s.agent.provider), 'A remote model is a network party: page outlines from Shadow tabs are sent to it. VEIL content never is.'),
-      field('Ollama address', Object.assign(el('input', { type: 'text', id: 's-ollama-url' }), { value: s.agent.ollamaUrl })),
-      field('Ollama model', Object.assign(el('input', { type: 'text', id: 's-ollama-model' }), { value: s.agent.ollamaModel }), 'Any model that supports structured output, e.g. llama3.1, qwen2.5.'),
-      field('Claude model', Object.assign(el('input', { type: 'text', id: 's-anthropic-model' }), { value: s.agent.anthropicModel })),
-      field('Anthropic API key', el('input', { type: 'password', id: 's-key', placeholder: s.hasAnthropicKey ? 'Saved (leave empty to keep, type a space to remove)' : 'sk-ant-...' }), 'Stored encrypted with your operating system keystore.'),
+      field('Provider', providerSelect(s), 'A remote model is a network party: page outlines from Shadow tabs are sent to it. VEIL content never is.'),
+      el('div', { class: 'hint', id: 's-provider-hint' }),
+      field('Model', el('div', { class: 'inline' },
+        el('input', { type: 'text', id: 's-model', list: 's-model-list', spellcheck: 'false' }),
+        el('datalist', { id: 's-model-list' }),
+        el('button', { id: 's-list-models', text: 'List models', onclick: listModels })), null),
+      el('div', { class: 'hint', id: 's-model-status' }),
+      field('Endpoint', el('input', { type: 'text', id: 's-endpoint', spellcheck: 'false' }), 'Leave empty to use the default shown. Change it for a regional or self-hosted endpoint.'),
+      el('div', { class: 'field', id: 's-key-field' }, el('label', { text: 'API key' }), el('input', { type: 'password', id: 's-key', autocomplete: 'off' }),
+        el('div', { class: 'hint', text: 'Stored encrypted with your operating system keystore. Leave empty to keep the saved key; type a single space to remove it.' })),
       field('Max agent steps', Object.assign(el('input', { type: 'text', id: 's-steps' }), { value: String(s.agent.maxSteps) })),
       el('div', { class: 'row' }, el('button', { class: 'primary', text: 'Save', onclick: saveSettings })),
     );
     $('s-custom-bridges').value = s.customBridges;
     $('s-filters').value = s.customFilters;
+    agentDraft = { providers: s.providers, models: { ...s.agent.models }, endpoints: { ...s.agent.endpoints }, keys: {}, current: s.agent.provider };
+    $('s-provider').addEventListener('change', () => { stashProvider(); loadProvider($('s-provider').value); });
+    loadProvider(s.agent.provider);
     showModal('Settings');
+  }
+
+  // Per-provider values typed in the dialog, kept while switching providers.
+  let agentDraft = null;
+
+  function providerSelect(s) {
+    const sel = el('select', { id: 's-provider' });
+    const groups = [['On this computer (private)', (p) => p.local], ['Hosted services', (p) => !p.local && p.id !== 'custom'], ['Other', (p) => p.id === 'custom']];
+    for (const [label, test] of groups) {
+      const g = el('optgroup', { label });
+      for (const p of s.providers.filter(test)) {
+        const o = el('option', { value: p.id, text: p.name + (p.hasKey ? ' ✓' : '') });
+        if (p.id === s.agent.provider) o.selected = true;
+        g.append(o);
+      }
+      sel.append(g);
+    }
+    return sel;
+  }
+
+  function providerInfo(id) { return agentDraft.providers.find((p) => p.id === id); }
+
+  function stashProvider() {
+    const id = agentDraft.current;
+    agentDraft.models[id] = $('s-model').value.trim();
+    agentDraft.endpoints[id] = $('s-endpoint').value.trim();
+    const k = $('s-key').value;
+    if (k) agentDraft.keys[id] = k;
+  }
+
+  function loadProvider(id) {
+    const p = providerInfo(id);
+    agentDraft.current = id;
+    $('s-provider-hint').textContent = p.hint;
+    $('s-model').value = agentDraft.models[id] || '';
+    $('s-model').placeholder = p.model || 'model name';
+    $('s-endpoint').value = agentDraft.endpoints[id] || '';
+    $('s-endpoint').placeholder = p.endpoint || (p.kind === 'anthropic' ? 'https://api.anthropic.com' : 'https://your-server/v1');
+    $('s-key-field').classList.toggle('hidden', p.kind === 'ollama');
+    $('s-key').value = agentDraft.keys[id] || '';
+    $('s-key').placeholder = p.hasKey ? 'Saved' : (p.needsKey ? p.keyHint || 'Paste your API key' : 'Optional');
+    $('s-model-list').textContent = '';
+    $('s-model-status').textContent = '';
+  }
+
+  async function listModels() {
+    const id = agentDraft.current;
+    const btn = $('s-list-models');
+    btn.disabled = true;
+    $('s-model-status').textContent = 'Asking the provider…';
+    try {
+      const r = await cmd('listModels', { provider: id, endpoint: $('s-endpoint').value.trim(), apiKey: $('s-key').value.trim() });
+      if (!r || !r.ok) { $('s-model-status').textContent = r ? r.error : 'Could not list models.'; return; }
+      const dl = $('s-model-list');
+      dl.textContent = '';
+      for (const m of r.models) dl.append(el('option', { value: m }));
+      $('s-model-status').textContent = r.models.length ? `${r.models.length} models available. Click the Model box to pick one.` : 'The provider returned no models.';
+      if (r.models.length && !$('s-model').value) $('s-model').focus();
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function saveSettings() {
@@ -194,11 +263,12 @@
     const patch = {
       searchEngine: v('s-engine'), securityLevel: v('s-level'), bridges: v('s-bridges'), customBridges: v('s-custom-bridges'),
       shadowRouting: v('s-shadow'), veilAllowClearnet: $('s-clearnet').checked, customFilters: v('s-filters'),
-      agent: { provider: v('s-provider'), ollamaUrl: v('s-ollama-url').trim(), ollamaModel: v('s-ollama-model').trim(), anthropicModel: v('s-anthropic-model').trim(), maxSteps: Number(v('s-steps')) },
+      agent: { provider: v('s-provider'), models: {}, endpoints: {}, maxSteps: Number(v('s-steps')) },
     };
-    const args = { patch };
-    const key = v('s-key');
-    if (key) args.anthropicApiKey = key;
+    stashProvider();
+    Object.assign(patch.agent.models, agentDraft.models);
+    Object.assign(patch.agent.endpoints, agentDraft.endpoints);
+    const args = { patch, apiKeys: agentDraft.keys };
     await cmd('setSettings', args);
     hideModal();
     toast('Settings saved.');

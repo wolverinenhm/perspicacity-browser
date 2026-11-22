@@ -16,7 +16,8 @@ const { siteOfUrl, httpsUpgrade, isNavigableUrl, omniboxToUrl, isOnion, isLoopba
 const { sanitizeFilename } = require('./sanitize');
 const { canonicalProfile, shimSource, HIGH_ENTROPY_HINT_HEADERS } = require('./fingerprint');
 const { ISOLATED_WORLD_ID, SNAPSHOT_SCRIPT, locateScript, focusScript } = require('./snapshot');
-const { AgentRun, callOllama, callAnthropic } = require('./agent');
+const { AgentRun } = require('./agent');
+const providers = require('./providers');
 const { SEARCH_ENGINES } = require('./settings');
 
 const CHROME_HEIGHT = 84;
@@ -573,12 +574,10 @@ class Browser {
 
   modelFor() {
     const cfg = this.settings.get().agent;
-    if (cfg.provider === 'anthropic') {
-      const key = this.settings.readSecret('anthropicApiKey');
-      if (!key) throw new Error('No Anthropic API key saved. Add one in Settings, or use a local Ollama model.');
-      return (messages, signal) => callAnthropic(cfg, key, messages, signal);
-    }
-    return (messages, signal) => callOllama(cfg, messages, signal);
+    const p = providers.PROVIDERS[cfg.provider];
+    const key = this.settings.readApiKey(cfg.provider);
+    if (p.needsKey && !key) throw new Error(`No ${p.name} API key saved. Add one in Settings, or use a local model.`);
+    return providers.makeDecider(cfg, key);
   }
 
   requestApproval(req) {
@@ -667,11 +666,29 @@ class Browser {
         case 'zoom':
           if (tab) tab.wc.setZoomLevel(a.delta === 0 ? 0 : tab.wc.getZoomLevel() + (a.delta > 0 ? 0.5 : -0.5));
           return true;
-        case 'getSettings': return { ...this.settings.get(), hasAnthropicKey: this.settings.hasSecret('anthropicApiKey'), engines: SEARCH_ENGINES };
+        case 'getSettings': {
+          const providerList = providers.catalog().map((p) => ({ ...p, hasKey: this.settings.hasApiKey(p.id) }));
+          return { ...this.settings.get(), providers: providerList, engines: SEARCH_ENGINES };
+        }
+        case 'listModels': {
+          const id = providers.PROVIDERS[a.provider] ? a.provider : null;
+          if (!id) throw new Error('unknown provider');
+          const cfg = { endpoints: { [id]: typeof a.endpoint === 'string' ? a.endpoint : '' }, models: {} };
+          const key = typeof a.apiKey === 'string' && a.apiKey.trim() ? a.apiKey.trim() : this.settings.readApiKey(id);
+          try {
+            return { ok: true, models: (await providers.listModels(id, cfg, key)).slice(0, 500) };
+          } catch (err) {
+            return { ok: false, error: err.name === 'TimeoutError' ? 'No answer within 20 seconds.' : err.message };
+          }
+        }
         case 'setSettings': {
           const before = this.settings.get();
           const after = this.settings.update(a.patch || {});
-          if (typeof a.anthropicApiKey === 'string') this.settings.writeSecret('anthropicApiKey', a.anthropicApiKey.trim() || null);
+          if (a.apiKeys && typeof a.apiKeys === 'object') {
+            for (const [id, value] of Object.entries(a.apiKeys)) {
+              if (providers.PROVIDERS[id] && typeof value === 'string') this.settings.writeApiKey(id, value.trim() || null);
+            }
+          }
           if (before.bridges !== after.bridges || before.customBridges !== after.customBridges) this.tor.start(after);
           if (before.veilAllowClearnet !== after.veilAllowClearnet || before.shadowRouting !== after.shadowRouting) await this.applyProxies();
           if (before.customFilters !== after.customFilters) this.emitFiltersChanged();
@@ -748,6 +765,7 @@ class Browser {
         open: this.agent.open, running: Boolean(this.agent.run), log: this.agent.log.slice(-80),
         pending: p ? { id: p.id, description: p.description, site: p.site, action: p.action } : null,
         provider: s.agent.provider,
+        providerLabel: `${providers.PROVIDERS[s.agent.provider].name.replace(/ \(.*\)$/, '')} · ${providers.modelFor(s.agent.provider, s.agent) || 'no model'}${providers.PROVIDERS[s.agent.provider].local ? ' (local)' : ' (remote)'}`,
       },
       downloads: this.downloads.slice(-5).map(({ id, name, state, received, total, dangerous }) => ({ id, name, state, received, total, dangerous })),
       filterRules: this.filter.ruleCount,
